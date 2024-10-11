@@ -15,6 +15,7 @@
 //! [Gherkin]: https://cucumber.io/docs/gherkin/reference/
 
 pub mod basic;
+pub mod map;
 
 use futures::Stream;
 

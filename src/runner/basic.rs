@@ -51,6 +51,7 @@ use crate::{
     parser, step,
     tag::Ext as _,
     Event, Runner, Step, World,
+    runner::map::{MapEvent, Identity},
 };
 
 /// CLI options of a [`Basic`] [`Runner`].
@@ -328,6 +329,7 @@ pub struct Basic<
     F = WhichScenarioFn,
     Before = BeforeHookFn<World>,
     After = AfterHookFn<World>,
+    Mapper: MapEvent<World> = Identity,
 > {
     /// Optional number of concurrently executed [`Scenario`]s.
     ///
@@ -385,6 +387,9 @@ pub struct Basic<
     /// Indicates whether execution should be stopped after the first failure.
     fail_fast: bool,
 
+    /// An event mapper
+    mapper: Mapper,
+
     #[cfg(feature = "tracing")]
     /// [`TracingCollector`] for [`event::Scenario::Log`]s forwarding.
     pub(crate) logs_collector: Arc<AtomicCell<Box<Option<TracingCollector>>>>,
@@ -414,6 +419,7 @@ impl<World, F: Clone, B: Clone, A: Clone> Clone for Basic<World, F, B, A> {
             before_hook: self.before_hook.clone(),
             after_hook: self.after_hook.clone(),
             fail_fast: self.fail_fast,
+            mapper: self.mapper.clone(),
             #[cfg(feature = "tracing")]
             logs_collector: Arc::clone(&self.logs_collector),
         }
@@ -458,6 +464,7 @@ impl<World> Default for Basic<World> {
             before_hook: None,
             after_hook: None,
             fail_fast: false,
+            mapper: Identity::default(),
             #[cfg(feature = "tracing")]
             logs_collector: Arc::new(AtomicCell::new(Box::new(None))),
         }
@@ -552,6 +559,7 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
             before_hook,
             after_hook,
             fail_fast,
+            mapper,
             #[cfg(feature = "tracing")]
             logs_collector,
             ..
@@ -567,6 +575,7 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
             before_hook,
             after_hook,
             fail_fast,
+            mapper,
             #[cfg(feature = "tracing")]
             logs_collector,
         }
@@ -616,6 +625,7 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
             retry_options,
             after_hook,
             fail_fast,
+            mapper,
             #[cfg(feature = "tracing")]
             logs_collector,
             ..
@@ -631,6 +641,7 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
             before_hook: Some(func),
             after_hook,
             fail_fast,
+            mapper,
             #[cfg(feature = "tracing")]
             logs_collector,
         }
@@ -668,6 +679,7 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
             retry_options,
             before_hook,
             fail_fast,
+            mapper,
             #[cfg(feature = "tracing")]
             logs_collector,
             ..
@@ -683,6 +695,7 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
             before_hook,
             after_hook: Some(func),
             fail_fast,
+            mapper,
             #[cfg(feature = "tracing")]
             logs_collector,
         }
@@ -805,18 +818,29 @@ where
             logs_collector,
         );
 
+        let filter_map = move |r| {
+            let mapper = self.mapper.clone();
+            async move {
+                match r {
+                    Either::Left(ev) => {
+                        let res = match ev {
+                            Ok(e) => Ok(mapper.map(e)),
+                            Err(e) => Err(e)
+                        };
+                        Some(res)
+                    },
+                    Either::Right(_) => None,
+                }
+            }
+        };
+
         stream::select(
             receiver.map(Either::Left),
             future::join(insert, execute)
                 .into_stream()
                 .map(Either::Right),
         )
-        .filter_map(|r| async {
-            match r {
-                Either::Left(ev) => Some(ev),
-                Either::Right(_) => None,
-            }
-        })
+        .filter_map(filter_map)
         .boxed_local()
     }
 }
