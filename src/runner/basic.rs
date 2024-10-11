@@ -471,7 +471,7 @@ impl<World> Default for Basic<World> {
     }
 }
 
-impl<World, Which, Before, After> Basic<World, Which, Before, After> {
+impl<World, Which, Before, After, Mapper: MapEvent<World>> Basic<World, Which, Before, After, Mapper> {
     /// If `max` is [`Some`], then number of concurrently executed [`Scenario`]s
     /// will be limited.
     ///
@@ -533,6 +533,13 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
         self
     }
 
+    /// Sets a non-default event mapper on the runner
+    #[must_use]
+    pub fn with_mapper(mut self, mapper: Mapper) -> Self {
+        self.mapper = mapper;
+        self
+    }
+
     /// Function determining whether a [`Scenario`] is [`Concurrent`] or
     /// a [`Serial`] one.
     ///
@@ -540,7 +547,7 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
     /// [`Serial`]: ScenarioType::Serial
     /// [`Scenario`]: gherkin::Scenario
     #[must_use]
-    pub fn which_scenario<F>(self, func: F) -> Basic<World, F, Before, After>
+    pub fn which_scenario<F>(self, func: F) -> Basic<World, F, Before, After, Mapper>
     where
         F: Fn(
                 &gherkin::Feature,
@@ -606,7 +613,7 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
     /// [`Scenario`]: gherkin::Scenario
     /// [`Step`]: gherkin::Step
     #[must_use]
-    pub fn before<Func>(self, func: Func) -> Basic<World, Which, Func, After>
+    pub fn before<Func>(self, func: Func) -> Basic<World, Which, Func, After, Mapper>
     where
         Func: for<'a> Fn(
             &'a gherkin::Feature,
@@ -659,7 +666,7 @@ impl<World, Which, Before, After> Basic<World, Which, Before, After> {
     /// [`Skipped`]: event::Step::Skipped
     /// [`Step`]: gherkin::Step
     #[must_use]
-    pub fn after<Func>(self, func: Func) -> Basic<World, Which, Before, Func>
+    pub fn after<Func>(self, func: Func) -> Basic<World, Which, Before, Func, Mapper>
     where
         Func: for<'a> Fn(
             &'a gherkin::Feature,
